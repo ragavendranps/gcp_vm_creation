@@ -1,14 +1,15 @@
 # Configure the Google Cloud provider
 provider "google" {
-  project = ""
-  region  = "us-west1"
-  zone    = "us-west1-a"
+  project = "molli-erp"
+  region  = "northamerica-northeast2"
+  zone    = "northamerica-northeast2-a"
 }
 
 # Create a VPC network
 resource "google_compute_network" "vpc_network" {
-  name                    = "my-vpc-network"
+  name                    = "molli-erp-vpc"
   auto_create_subnetworks = false
+  routing_mode            = "GLOBAL"
 }
 
 # Subnetwork configuration
@@ -37,11 +38,10 @@ resource "google_compute_firewall" "http_firewall" {
 
   allow {
     protocol = "tcp"
-    ports    = ["0-65535"]
+    ports    = ["80", "22", "3389", "1433", "1434"]
   }
   allow {
-    protocol = "udp"
-    ports    = ["0-65535"]
+    protocol = "icmp"
   }
 
   source_ranges = ["0.0.0.0/0"]
@@ -56,14 +56,26 @@ resource "google_compute_backend_service" "web_app_backend_service" {
   connection_draining_timeout_sec = 300
 
   backend {
-    group = google_compute_instance_group.web_instance_group.self_link
-  }
-  backend {
-    group = google_compute_instance_group.app_instance_group.self_link
+    group = google_compute_instance_group.web_private_group.self_link
   }
   load_balancing_scheme = "EXTERNAL"
 }
 
+# creates a group of dissimilar virtual machine instances
+resource "google_compute_instance_group" "web_private_group" {
+  name        = "web-app-vm-group"
+  description = "Web servers instance group"
+  zone        = "northamerica-northeast2-a"
+  
+  instances   = [ 
+    google_compute_instance.web-server.self_link
+    ]
+
+  named_port {
+    name = "http"
+    port = "80"
+  }
+}
 # Create a health check
 resource "google_compute_http_health_check" "http_check" {
   name               = "http-check"
@@ -75,27 +87,39 @@ resource "google_compute_http_health_check" "http_check" {
 # Create a target pool for the load balancer
 resource "google_compute_target_pool" "web_app_target_pool" {
   name             = "web-app-target-pool"
-  instances        = [google_compute_instance.web_instance.self_link, google_compute_instance.app_instance.self_link]
+  instances        = [google_compute_instance.web-server.self_link]
   health_checks    = [google_compute_http_health_check.http_check.self_link]
   session_affinity = "CLIENT_IP"
 }
 
 # Create a Windows web server
-resource "google_compute_instance" "web_server" {
+resource "google_compute_disk" "disk1" {
+  name  = "web-server-disk"
+  type  = "pd-standard"
+  size  = 375
+  zone  = "northamerica-northeast2-a"
+}
+
+resource "google_compute_attached_disk" "disk1-attachment" {
+  instance = google_compute_instance.web-server.id
+  disk     = google_compute_disk.disk1.id
+}
+
+
+resource "google_compute_instance" "web-server" {
   name         = "web-server"
   machine_type = "n1-highmem-4"
-  zone         = "us-west1-a"
-  tags         = "web"
+  zone         = "northamerica-northeast2-a"
+  tags         = ["web"]
   boot_disk {
     initialize_params {
-      image = "windows-server-2019-dc-v20230315 "
+      image = "windows-2019"
     }
   }
   network_interface {
     network = google_compute_network.vpc_network.self_link
     subnetwork = google_compute_subnetwork.web_subnet.self_link
     access_config {
-      nat_ip = google_compute_address.web_nat_ip.address
     }
   }
   metadata = {
@@ -106,21 +130,33 @@ resource "google_compute_instance" "web_server" {
 }
 
 # Create a Windows app server
-resource "google_compute_instance" "app_server" {
+
+resource "google_compute_disk" "disk2" {
+  name  = "app-server-disk"
+  type  = "pd-standard"
+  size  = 375
+  zone  = "northamerica-northeast2-a"
+}
+
+resource "google_compute_attached_disk" "disk2-attachment" {
+  instance = google_compute_instance.app-server.id
+  disk     = google_compute_disk.disk2.id
+}
+
+resource "google_compute_instance" "app-server" {
   name         = "app-server"
   machine_type = "n1-highmem-2"
-  zone         = "us-west1-a"
-  tags         = "app"
+  zone         = "northamerica-northeast2-a"
+  tags         = ["app"]
   boot_disk {
     initialize_params {
-      image = "windows-server-2019-dc-v20230315 "
+      image = "windows-2019"
     }
   }
   network_interface {
     network = google_compute_network.vpc_network.self_link
     subnetwork = google_compute_subnetwork.app_subnet.self_link
     access_config {
-      nat_ip = google_compute_address.web_nat_ip.address
     }
   }
   metadata = {
@@ -134,7 +170,7 @@ resource "google_compute_instance" "app_server" {
 # resource "google_sql_database_instance" "sql_instance" {
 #   name             = "my-sql-instance"
 #   database_version = "SQL_SERVER_2019_STANDARD"
-#   region           = "us-west1"
+#   region           = "northamerica-northeast2"
 #   tags             = "db"
 
 #   settings {
@@ -152,20 +188,38 @@ resource "google_compute_instance" "app_server" {
 # }
 
 # Create a MSSQL compute
-resource "google_compute_instance" "db" {
+
+resource "google_compute_disk" "disk3" {
+  name  = "db-server-disk"
+  type  = "pd-standard"
+  size  = 375
+  zone  = "northamerica-northeast2-a"
+}
+
+resource "google_compute_attached_disk" "disk3-attachment" {
+  instance = google_compute_instance.dbserver.id
+  disk     = google_compute_disk.disk3.id
+}
+
+resource "google_compute_instance" "dbserver" {
   name         = "db-server"
-  machine_type = "db-highmem-4"
-  zone         = "us-west1-c"
+  machine_type = "n1-highmem-4"
+  zone         = "northamerica-northeast2-a"
+  tags         = ["db"]
   boot_disk {
     initialize_params {
-      image = "sql-2019-standard-windows-2019-dc-v20230315"
+      image = "/marketplace/product/cognosys-public/secured-sql-server-2019-stand-win-ser-2019"
     }
   }
   network_interface {
     network = google_compute_network.vpc_network.self_link
     subnetwork = google_compute_subnetwork.db_subnet.self_link
     access_config {
-      nat_ip = google_compute_address.web_nat_ip.address
     }
+  }
+  metadata = {
+    windows-startup-script-cmd = "net user /add BAASSAdmin Password_123 & net localgroup administrators BAASSAdmin /add"
+    windows-startup-script-cmd = "net user /add BAASSUser Password_123 & net localgroup administrators BAASSUser /add"
+    windows-startup-script-cmd = "net user /add Sagert Password_123 & net localgroup administrators Sagert /add"
   }
 }
