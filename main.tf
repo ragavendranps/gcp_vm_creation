@@ -99,7 +99,7 @@ resource "google_compute_disk" "disk1" {
   size  = 375
   zone  = "northamerica-northeast2-a"
   disk_encryption_key {
-    kms_key_self_link = local.cmek_self_link
+    kms_key_self_link = "projects/molli-erp/locations/northamerica-northeast2/keyRings/molly_key_ring/cryptoKeys/molly_key"
   }
 }
 
@@ -140,7 +140,7 @@ resource "google_compute_disk" "disk2" {
   size  = 375
   zone  = "northamerica-northeast2-a"
   disk_encryption_key {
-    kms_key_self_link = local.cmek_self_link
+    kms_key_self_link = "projects/molli-erp/locations/northamerica-northeast2/keyRings/molly_key_ring/cryptoKeys/molly_key"
   }
 }
 
