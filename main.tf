@@ -93,6 +93,10 @@ resource "google_compute_target_pool" "web_app_target_pool" {
 }
 
 # Create a Windows web server
+resource "google_compute_address" "web-app-static-ip" {
+  name = "web-app-server-ip-address"
+}
+
 resource "google_compute_disk" "disk1" {
   name  = "web-app-server-disk"
   type  = "pd-standard"
@@ -123,6 +127,7 @@ resource "google_compute_instance" "web_app_server" {
     network = google_compute_network.vpc_network.self_link
     subnetwork = google_compute_subnetwork.web_app_subnet.self_link
     access_config {
+      nat_ip = "${google_compute_address.web-app-static-ip.address}"
     }
   }
   metadata = {
@@ -133,6 +138,9 @@ resource "google_compute_instance" "web_app_server" {
 }
 
 # Create a Windows app server
+resource "google_compute_address" "sei-search-static-ip" {
+  name = "sei-search-server-ip-address"
+}
 
 resource "google_compute_disk" "disk2" {
   name  = "sei-search-server-disk"
@@ -163,6 +171,7 @@ resource "google_compute_instance" "sei_search_server" {
     network = google_compute_network.vpc_network.self_link
     subnetwork = google_compute_subnetwork.sei_search_subnet.self_link
     access_config {
+      nat_ip = "${google_compute_address.sei-search-static-ip.address}"
     }
   }
   metadata = {
