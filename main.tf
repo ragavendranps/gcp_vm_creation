@@ -38,19 +38,48 @@ resource "google_compute_firewall" "http_firewall" {
 
   allow {
     protocol = "tcp"
-    ports    = ["22", "3389", "1433", "1434", "443"]
+    ports    = ["1890", "1895", "8124", "443", "20100", "27017", "9200", "1433", "1434", "81", "8133", "4504", "22", "3389", "80"]
   }
   allow {
     protocol = "icmp"
   }
 
-  source_ranges = ["0.0.0.0/0"]
+  source_tags = ["web", "sei-search", "db"]
+
+  source_ranges = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+}
+
+# used to forward traffic to the correct load balancer for HTTP load balancing 
+resource "google_compute_global_forwarding_rule" "global_forwarding_rule" {
+  name       = "molly-erp-global-forwarding-rule"
+  project    = "molly-erp"
+  target     = google_compute_target_http_proxy.target_http_proxy.self_link
+  port_range = "80"
+}
+
+# used by one or more global forwarding rule to route incoming HTTP requests to a URL map
+resource "google_compute_target_http_proxy" "target_http_proxy" {
+  name    = "molly-erp-proxy"
+  project = "molly-erp"
+  url_map = google_compute_url_map.url_map.self_link
+}
+
+# used to route requests to a backend service based on rules that you define for the host and path of an incoming URL
+resource "google_compute_url_map" "url_map" {
+  name            = "molly-erp-load-balancer"
+  project         = "molly-erp"
+  default_service = google_compute_backend_service.web_app_backend_service.self_link
+}
+
+# show external ip address of load balancer
+output "load-balancer-ip-address" {
+  value = google_compute_global_forwarding_rule.global_forwarding_rule.ip_address
 }
 
 # Create a load balancer
 resource "google_compute_backend_service" "web_app_backend_service" {
   name                  = "web-app-backend-service"
-  protocol              = "TCP"
+  protocol              = "HTTP"
   health_checks         = [google_compute_http_health_check.http_check.self_link]
   timeout_sec           = 10
   connection_draining_timeout_sec = 300
@@ -130,6 +159,14 @@ resource "google_compute_instance" "web_app_server" {
       nat_ip = "${google_compute_address.web-app-static-ip.address}"
     }
   }
+
+  metadata_startup_script = <<-EOF
+  # Set up IIS
+  Import-Module ServerManager
+  Add-WindowsFeature Web-Server
+  Set-Content -Path "C:\inetpub\wwwroot\Default.htm"
+  EOF
+  
   metadata = {
     windows-startup-script-cmd = "net user /add BAASSAdmin Password_123 & net localgroup administrators BAASSAdmin /add"
     windows-startup-script-cmd = "net user /add BAASSUser Password_123 & net localgroup administrators BAASSUser /add"
@@ -137,7 +174,7 @@ resource "google_compute_instance" "web_app_server" {
   }
 }
 
-# Create a Windows app server
+# Create a Windows sei-search server
 resource "google_compute_address" "sei-search-static-ip" {
   name = "sei-search-server-ip-address"
 }
@@ -161,7 +198,7 @@ resource "google_compute_instance" "sei_search_server" {
   name         = "sei-search-server"
   machine_type = "n1-highmem-2"
   zone         = "northamerica-northeast2-a"
-  tags         = ["app"]
+  tags         = ["sei-search"]
   boot_disk {
     initialize_params {
       image = "windows-2019"
@@ -174,6 +211,7 @@ resource "google_compute_instance" "sei_search_server" {
       nat_ip = "${google_compute_address.sei-search-static-ip.address}"
     }
   }
+
   metadata = {
     windows-startup-script-cmd = "net user /add BAASSAdmin Password_123 & net localgroup administrators BAASSAdmin /add"
     windows-startup-script-cmd = "net user /add BAASSUser Password_123 & net localgroup administrators BAASSUser /add"
@@ -204,7 +242,7 @@ resource "google_compute_instance" "sei_search_server" {
 
 # Create a MSSQL compute
 
-resource "google_compute_disk" "disk3" {
+/* resource "google_compute_disk" "disk3" {
   name  = "db-server-disk"
   type  = "pd-standard"
   size  = 375
@@ -237,4 +275,4 @@ resource "google_compute_instance" "dbserver" {
     windows-startup-script-cmd = "net user /add BAASSUser Password_123 & net localgroup administrators BAASSUser /add"
     windows-startup-script-cmd = "net user /add Sagert Password_123 & net localgroup administrators Sagert /add"
   }
-}
+} */
